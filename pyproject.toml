@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eduflow-api"
+version = "0.1.0"
+description = "Async lecture transcription, study notes, flashcards and tutor API"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.34,<1",
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "asyncpg>=0.30,<1",
+    "alembic>=1.14,<2",
+    "pydantic-settings>=2.7,<3",
+    "email-validator>=2.2,<3",
+    "PyJWT>=2.10,<3",
+    "pwdlib[argon2]>=0.2,<1",
+    "python-multipart>=0.0.20,<1",
+    "aiofiles>=24.1,<26",
+    "celery[redis]>=5.4,<6",
+    "redis>=5.2,<7",
+    "openai>=1.60,<3",
+]
+
+[project.optional-dependencies]
+# Faster-Whisper 1.2.1 uses av.open(metadata_errors=...), removed in PyAV 19.
+worker = ["faster-whisper>=1.1,<2", "av>=11,<19"]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8.3,<10",
+    "pytest-asyncio>=0.25,<2",
+    "aiosqlite>=0.20,<1",
+    "ruff>=0.9,<1",
+    "mypy>=1.14,<2",
+    "types-aiofiles>=24.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = ["postgres: requires TEST_DATABASE_URL pointing to a disposable PostgreSQL database"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/*.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app"]
+
+[[tool.mypy.overrides]]
+module = ["celery", "celery.*", "faster_whisper", "faster_whisper.*"]
+ignore_missing_imports = true

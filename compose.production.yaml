@@ -1,0 +1,145 @@
+# Standalone file: do not merge with compose.yaml, which publishes local DB/API ports.
+name: eduflow-production
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-eduflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-eduflow}
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+  UPLOAD_DIR: /srv/eduflow/uploads
+  RATE_LIMIT_ENABLED: "true"
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      public:
+      proxy:
+        ipv4_address: 172.30.80.2
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eduflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-eduflow}
+    volumes:
+      - ${DATA_DIR:-/srv/eduflow-data}/postgres:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, 'yes', --maxmemory-policy, noeviction]
+    volumes:
+      - ${DATA_DIR:-/srv/eduflow-data}/redis:/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+  migrate:
+    build:
+      context: .
+      target: api
+    env_file: .env.production
+    environment: *app-environment
+    command: [alembic, upgrade, head]
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    env_file: .env.production
+    environment: *app-environment
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --proxy-headers
+      - --forwarded-allow-ips=172.30.80.2
+    volumes:
+      - ${DATA_DIR:-/srv/eduflow-data}/audio:/srv/eduflow/uploads
+    networks: [backend, proxy]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    logging: *logging
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    env_file: .env.production
+    environment: *app-environment
+    # Allow an active transcription to finish during a planned stop/update.
+    stop_grace_period: 2h
+    volumes:
+      - ${DATA_DIR:-/srv/eduflow-data}/audio:/srv/eduflow/uploads
+      - whisper_cache:/home/eduflow/.cache
+    networks: [backend]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    logging: *logging
+
+networks:
+  public:
+  backend:
+  proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:
+  whisper_cache:

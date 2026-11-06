@@ -1,0 +1,35 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	@upload {
+		method POST
+		path /api/v1/lectures/upload /api/v1/lectures/upload/
+	}
+	handle @upload {
+		request_body {
+			max_size 101MiB
+		}
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle {
+		request_body {
+			max_size 64KiB
+		}
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
