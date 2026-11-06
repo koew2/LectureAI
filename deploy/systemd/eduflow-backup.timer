@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily EduFlow backup at 03:00 Europe/Moscow
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Europe/Moscow
+RandomizedDelaySec=15m
+Persistent=true
+Unit=eduflow-backup.service
+
+[Install]
+WantedBy=timers.target
