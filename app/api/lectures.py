@@ -16,6 +16,7 @@ from app.api.limits import limit_chat, limit_upload
 from app.models import AudioFile, LectureProcessingResult, LectureStatus
 from app.schemas import ChatRequest, ChatResponse, LectureListItem, LectureResponse, UploadResponse
 from app.services.ai import AIService, AIUnavailable
+from app.services.event_log import add_event, record_event
 from app.services.mail import notify_lecture_owner
 from app.services.storage import save_upload
 from app.worker import enqueue_lecture
@@ -54,24 +55,43 @@ async def upload_lecture(
 ) -> UploadResponse:
     """Accept mp3/wav/m4a for background validation, transcription and study generation."""
     file_id = uuid4()
-    path = await save_upload(file, file_id, settings)
+    user_id = user.id
+    try:
+        path = await save_upload(file, file_id, settings)
+    except HTTPException as exc:
+        await record_event(
+            session,
+            "upload_failed" if exc.status_code >= 500 else "upload_rejected",
+            user_id=user_id,
+            level="error",
+            status_code=exc.status_code,
+        )
+        raise
     lecture = AudioFile(
         id=file_id,
-        user_id=user.id,
+        user_id=user_id,
         file_path=str(path),
         filename=PureWindowsPath(file.filename or "").name.replace("\x00", "")[:255],
         status=LectureStatus.pending,
     )
     session.add(lecture)
     try:
+        await session.flush()
+        add_event(session, "lecture_uploaded", user_id=user_id, lecture_id=file_id)
         await session.commit()
-    except SQLAlchemyError:
+    except (SQLAlchemyError, OSError) as exc:
         await session.rollback()
-        await run_in_threadpool(path.unlink, missing_ok=True)
+        try:
+            await run_in_threadpool(path.unlink, missing_ok=True)
+        except OSError as cleanup_error:
+            logger.warning(
+                "Could not clean up upload %s (%s)", file_id, type(cleanup_error).__name__
+            )
+        await record_event(session, "upload_failed", user_id=user_id, error=exc, status_code=503)
         raise HTTPException(status_code=503, detail="Unable to store lecture") from None
     try:
         await run_in_threadpool(enqueue_lecture, file_id)
-    except Exception:
+    except Exception as exc:
         # A lost broker response can mean the worker already received the job.
         failed = await session.scalar(
             update(AudioFile)
@@ -94,6 +114,9 @@ async def upload_lecture(
                 error_message=QUEUE_ERROR,
                 finished_at=datetime.now(UTC),
             )
+        )
+        add_event(
+            session, "queue_failed", user_id=user_id, lecture_id=file_id, error=exc, status_code=503
         )
         await session.commit()
         await notify_lecture_owner(session, settings, failed)
@@ -124,9 +147,13 @@ async def chat(
     if lecture.status != LectureStatus.completed or lecture.transcription is None:
         raise HTTPException(status_code=409, detail="Lecture processing is not completed")
     clean_text = lecture.transcription.clean_text
+    user_id = user.id
     await session.rollback()
     try:
         answer = await AIService(settings).answer_question(clean_text, body.question)
-    except AIUnavailable:
+    except AIUnavailable as exc:
+        await record_event(
+            session, "chat_failed", user_id=user_id, lecture_id=file_id, error=exc, status_code=503
+        )
         raise HTTPException(status_code=503, detail="AI provider is unavailable") from None
     return ChatResponse(answer=answer)

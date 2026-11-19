@@ -1,7 +1,7 @@
 """Validated request/response contracts exposed in OpenAPI."""
 
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -136,6 +136,23 @@ class AdminProcessingPage(BaseModel):
     next_before: int | None
     successful_count: int
     failed_count: int
+
+
+class AdminEventItem(BaseModel):
+    id: int
+    created_at: datetime
+    level: Literal["info", "error"]
+    event: str
+    username: str | None
+    user_email: str | None
+    lecture_id: UUID | None
+    error_type: str | None
+    status_code: int | None
+
+
+class AdminEventPage(BaseModel):
+    items: list[AdminEventItem]
+    next_before: int | None
 
 
 class UploadResponse(BaseModel):

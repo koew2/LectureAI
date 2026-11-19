@@ -1,5 +1,6 @@
 """ASGI application. Run with `uvicorn app.main:app`."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.api import admin, auth, docs, lectures
 from app.core.config import get_settings
 from app.db import create_session_factory
+from app.services.event_log import record_event
 from app.services.rate_limit import RateLimiter, RedisCounterStore
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -76,6 +80,25 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     """Do not echo invalid passwords, JWTs or other request data into error bodies."""
     errors = [{"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
     return JSONResponse(status_code=422, content={"detail": errors})
+
+
+@app.exception_handler(Exception)
+async def application_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    if request.url.path.startswith("/api/v1/"):
+        factory = getattr(request.app.state, "session_factory", None)
+        if factory is not None:
+            try:
+                async with factory() as session:
+                    await record_event(
+                        session,
+                        "api_error",
+                        user_id=getattr(request.state, "event_user_id", None),
+                        error=exc,
+                        status_code=500,
+                    )
+            except (SQLAlchemyError, OSError) as log_error:
+                logger.warning("Could not write API error event (%s)", type(log_error).__name__)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.get("/health", tags=["Health"])

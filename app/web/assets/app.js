@@ -37,6 +37,7 @@ let pendingRegistration = null;
 let authBusy = false;
 let session = null;
 let adminWindow = null;
+let adminRequestId = null;
 let refreshInFlight = null;
 let loggingOut = false;
 let lectures = [];
@@ -254,6 +255,7 @@ byId("account").addEventListener("click", onAccount);
 function closeAdminWindow() {
   adminWindow?.close();
   adminWindow = null;
+  adminRequestId = null;
 }
 
 window.addEventListener("pagehide", closeAdminWindow);
@@ -272,22 +274,25 @@ byId("open-admin").addEventListener("click", () => {
 
 window.addEventListener("message", async (event) => {
   if (event.origin !== location.origin || !adminWindow || event.source !== adminWindow) return;
-  const { type, requestId, result, before } = event.data || {};
-  if (type !== "eduflow-admin-history" || !Number.isInteger(requestId)) return;
-  if (!["all", "completed", "failed"].includes(result)) return;
+  const { type, requestId, result, level, before, view = "processing" } = event.data || {};
+  if (type !== "eduflow-admin-history" || !Number.isSafeInteger(requestId) || requestId < 1) return;
+  if (!["processing", "events"].includes(view)) return;
+  if (view === "processing" && !["all", "completed", "failed"].includes(result)) return;
+  if (view === "events" && !["all", "info", "error"].includes(level)) return;
   if (before != null && (!Number.isSafeInteger(before) || before < 1)) return;
+  adminRequestId = requestId;
   const target = adminWindow;
   const current = session;
   try {
     if (!current?.is_admin) throw new Error(errors[401]);
-    const query = new URLSearchParams({ result });
+    const query = new URLSearchParams(view === "events" ? { level } : { result });
     if (before != null) query.set("before", before);
-    const page = await authorized(`/admin/processing?${query}`);
-    if (session !== current || adminWindow !== target) return;
-    target.postMessage({ type: "eduflow-admin-page", requestId, page }, location.origin);
+    const page = await authorized(`/admin/${view}?${query}`);
+    if (session !== current || adminWindow !== target || target.closed || adminRequestId !== requestId) return;
+    target.postMessage({ type: "eduflow-admin-page", requestId, view, page }, location.origin);
   } catch (error) {
-    if (session !== current || adminWindow !== target || target.closed) return;
-    target.postMessage({ type: "eduflow-admin-page", requestId, error: error.status || 0 }, location.origin);
+    if (session !== current || adminWindow !== target || target.closed || adminRequestId !== requestId) return;
+    target.postMessage({ type: "eduflow-admin-page", requestId, view, error: error.status || 0 }, location.origin);
   }
 });
 

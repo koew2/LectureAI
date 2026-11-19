@@ -145,6 +145,8 @@ networks:
     ipam:
       config:
         - subnet: 172.30.80.0/24
+          # Keep automatic assignments away from Caddy's trusted proxy address.
+          ip_range: 172.30.80.128/25
 
 volumes:
   caddy_data:

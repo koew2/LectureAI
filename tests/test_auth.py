@@ -149,6 +149,17 @@ async def test_login_accepts_ascii_form_of_internationalized_email_domain(
     assert response.status_code == 200
 
 
+async def test_international_mailbox_is_not_casefolded_into_a_different_account(
+    client: AsyncClient, settings: Settings, mail: Mock
+) -> None:
+    settings.admin_email = "strasse@example.com"
+    ascii_account = await register_and_login(client, "strasse@example.com")
+    international_account = await register_and_login(client, "straße@example.com")
+    assert ascii_account["is_admin"] is True
+    assert international_account["is_admin"] is False
+    assert mail.call_args.args[1] == "straße@example.com"
+
+
 async def test_refresh_is_single_use_and_logout_revokes(
     client: AsyncClient, tokens: dict[str, str]
 ) -> None:

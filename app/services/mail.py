@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.models import AudioFile, LectureStatus, User
+from app.services.event_log import record_event
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +63,11 @@ async def notify_lecture_owner(
         return
 
     file_id = lecture.id
+    user_id = lecture.user_id
     filename = lecture.filename or f"Лекция {str(file_id)[:8]}"
     successful = lecture.status == LectureStatus.completed
     try:
-        owner = await session.get(User, lecture.user_id)
+        owner = await session.get(User, user_id)
         recipient = owner.email if owner is not None else None
         # Release the read transaction before waiting on the mail server.
         await session.rollback()
@@ -90,3 +92,10 @@ async def notify_lecture_owner(
         )
     except (OSError, ValueError) as exc:
         logger.warning("Lecture %s notification failed (%s)", file_id, type(exc).__name__)
+        await record_event(
+            session,
+            "lecture_mail_failed",
+            user_id=user_id,
+            lecture_id=file_id,
+            error=exc,
+        )

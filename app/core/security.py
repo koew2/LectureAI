@@ -17,6 +17,14 @@ password_hash = PasswordHash.recommended()
 DUMMY_PASSWORD_HASH = password_hash.hash("not-a-user-password")
 
 
+def normalize_email(email: str) -> str:
+    """Keep legacy ASCII login behavior without rewriting international mailbox names."""
+    local_part, separator, domain = email.rpartition("@")
+    if local_part.isascii():
+        local_part = local_part.lower()
+    return f"{local_part}{separator}{domain.lower()}"
+
+
 class TokenClaims(BaseModel):
     sub: UUID
     jti: UUID

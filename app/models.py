@@ -117,6 +117,22 @@ class LectureProcessingResult(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
 
 
+class OperationalEvent(Base):
+    """Structured application activity visible to administrators."""
+
+    __tablename__ = "operational_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    level: Mapped[str] = mapped_column(String(5), index=True)
+    event: Mapped[str] = mapped_column(String(40))
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    lecture_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("audio_files.id", ondelete="SET NULL")
+    )
+    error_type: Mapped[str | None] = mapped_column(String(80))
+    status_code: Mapped[int | None] = mapped_column(Integer)
+
+
 class Transcription(Base):
     __tablename__ = "transcriptions"
 

@@ -13,6 +13,7 @@ from app.models import (
     Flashcard,
     LectureProcessingResult,
     LectureStatus,
+    OperationalEvent,
     Summary,
     Transcription,
     User,
@@ -79,6 +80,16 @@ async def test_pipeline_persists_all_results_and_is_idempotent(
         assert await session.scalar(select(func.count()).select_from(Transcription)) == 1
         outcomes = (await session.scalars(select(LectureProcessingResult))).all()
         assert len(outcomes) == 1 and outcomes[0].successful
+        events = (
+            await session.scalars(select(OperationalEvent).order_by(OperationalEvent.id))
+        ).all()
+        assert [(item.event, item.level, item.error_type) for item in events] == [
+            ("lecture_completed", "info", None),
+            ("lecture_mail_failed", "error", "OSError"),
+        ]
+        assert all(
+            item.lecture_id == file_id and item.user_id == lecture.user_id for item in events
+        )
 
 
 async def test_ai_failure_has_no_partial_results_and_can_be_retried(
@@ -122,6 +133,16 @@ async def test_ai_failure_has_no_partial_results_and_can_be_retried(
         ).all()
         assert [item.successful for item in attempts] == [False, True]
         assert "private" not in (attempts[0].error_message or "")
+        events = (
+            await session.scalars(select(OperationalEvent).order_by(OperationalEvent.id))
+        ).all()
+        assert [(item.event, item.error_type) for item in events] == [
+            ("lecture_failed", "AIUnavailable"),
+            ("lecture_completed", None),
+        ]
+        assert all(
+            item.lecture_id == file_id and item.user_id == lecture.user_id for item in events
+        )
 
 
 async def test_bad_audio_fails_without_calling_ai(

@@ -237,6 +237,15 @@ dialog::backdrop { background: #15262e7a; }
 .admin-table th:nth-child(4) { width: 15%; }
 .admin-table td:nth-child(3) .status { white-space: nowrap; }
 #more-processing { margin-top: .9rem; }
+#more-events { margin-top: .9rem; }
+.admin-events { margin-top: 1rem; }
+.admin-events table { min-width: 920px; }
+.admin-events th:nth-child(1) { width: 16%; }
+.admin-events th:nth-child(2) { width: 23%; }
+.admin-events th:nth-child(3) { width: 13%; }
+.admin-events th:nth-child(4) { width: 22%; }
+.admin-events th:nth-child(5), .admin-events th:nth-child(6) { width: 13%; }
+.admin-user-email { display: block; color: var(--muted); font-size: .82rem; }
 
 @media (max-width: 870px) {
   .header-inner { flex-wrap: wrap; align-content: center; padding-block: .7rem; gap: .7rem; }

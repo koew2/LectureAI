@@ -24,6 +24,7 @@ from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_token,
     decode_token,
+    normalize_email,
     password_hash,
 )
 from app.models import RefreshSession, RegistrationCode, User
@@ -34,6 +35,7 @@ from app.schemas import (
     TokenPair,
     UserResponse,
 )
+from app.services.event_log import add_event, record_event
 from app.services.mail import send_registration_code
 
 router = APIRouter(prefix="/auth", tags=["Authentication"], dependencies=[Depends(limit_auth)])
@@ -78,7 +80,7 @@ def issue_tokens(
 @router.post("/register", status_code=204)
 async def register(body: RegisterRequest, session: SessionDep, settings: SettingsDep) -> Response:
     """Send a six-digit email code after validating the registration form."""
-    email = str(body.email).casefold()
+    email = normalize_email(body.email)
     if await session.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(status_code=409, detail="Email is already registered")
 
@@ -109,12 +111,13 @@ async def register(body: RegisterRequest, session: SessionDep, settings: Setting
     await session.commit()
     try:
         await run_in_threadpool(send_registration_code, settings, email, code)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         await session.execute(
             delete(RegistrationCode).where(
                 RegistrationCode.email == email, RegistrationCode.digest == digest
             )
         )
+        add_event(session, "registration_mail_failed", error=exc, status_code=503)
         await session.commit()
         logger.warning("Registration email delivery failed (%s)", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Unable to send registration code") from None
@@ -126,7 +129,7 @@ async def confirm_registration(
     body: RegisterConfirmRequest, session: SessionDep, settings: SettingsDep
 ) -> User:
     """Create an account and consume its email code in the same transaction."""
-    email = str(body.email).casefold()
+    email = normalize_email(body.email)
     digest = await session.scalar(
         update(RegistrationCode)
         .where(
@@ -147,6 +150,8 @@ async def confirm_registration(
     user = User(email=email, username=body.username, hashed_password=hashed)
     session.add(user)
     try:
+        await session.flush()
+        add_event(session, "user_registered", user_id=user.id)
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
@@ -165,17 +170,25 @@ async def login(
 ) -> TokenPair:
     """OAuth2 form: pass the email address in the `username` field."""
     try:
-        email = email_address.validate_python(form.username).casefold()
+        email = normalize_email(email_address.validate_python(form.username))
     except ValidationError:
         user = None
     else:
         user = await session.scalar(select(User).where(User.email == email))
+        legacy_email = email.casefold()
+        if user is None and legacy_email != email:
+            user = await session.scalar(select(User).where(User.email == legacy_email))
     verified = await run_in_threadpool(
         password_hash.verify, form.password, user.hashed_password if user else DUMMY_PASSWORD_HASH
     )
     if user is None or not verified or not user.is_active:
+        if user is not None:
+            await record_event(
+                session, "login_failed", user_id=user.id, level="error", status_code=401
+            )
         raise unauthorized()
     pair = issue_tokens(user, session, settings, response, secure=request.url.scheme == "https")
+    add_event(session, "login_succeeded", user_id=user.id)
     await session.commit()
     response.headers["Cache-Control"] = "no-store"
     return pair

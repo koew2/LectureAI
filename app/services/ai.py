@@ -74,18 +74,16 @@ class AIService:
         ]
         response_format: ResponseFormat = {"type": "json_object"} if json_mode else {"type": "text"}
         extra_body = None
-        if self.settings.ai_provider == "openrouter":
-            extra_body = {"reasoning": {"enabled": False}}
-            if json_mode:
-                response_format = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "lecture_study_notes",
-                        "schema": StudyNotes.model_json_schema(),
-                        "strict": True,
-                    },
-                }
-                extra_body["provider"] = {"require_parameters": True}
+        if self.settings.ai_provider == "openrouter" and json_mode:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "lecture_study_notes",
+                    "schema": StudyNotes.model_json_schema(),
+                    "strict": True,
+                },
+            }
+            extra_body = {"provider": {"require_parameters": True}}
         try:
             async with self._client() as client:
                 if self.settings.ai_provider == "openai":

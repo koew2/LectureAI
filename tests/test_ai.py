@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -78,9 +79,42 @@ async def test_sdk_payload_and_client_closure(
     assert payload["response_format"] == {"type": "text"}
     token_arg = "max_completion_tokens" if provider == "openai" else "max_tokens"
     assert payload[token_arg] == settings.ai_max_output_tokens
-    if provider == "openrouter":
-        assert payload["extra_body"] == {"reasoning": {"enabled": False}}
+    assert payload.get("extra_body") is None
     manager.__aexit__.assert_awaited_once()
+
+
+async def test_openrouter_notes_allow_reasoning_and_preserve_strict_schema(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.ai_provider = "openrouter"
+    service = AIService(settings)
+    expected = study_notes()
+
+    def openrouter(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert "reasoning" not in payload
+        assert payload["provider"] == {"require_parameters": True}
+        assert payload["response_format"]["type"] == "json_schema"
+        assert payload["response_format"]["json_schema"]["strict"] is True
+        assert (
+            payload["response_format"]["json_schema"]["schema"]
+            == type(expected).model_json_schema()
+        )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": expected.model_dump_json()}}
+                ]
+            },
+        )
+
+    client = AsyncOpenAI(
+        api_key="test-key",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(openrouter)),
+    )
+    monkeypatch.setattr(service, "_client", lambda: client)
+    assert await service.generate_notes("A lecture on Euclidean geometry.") == expected
 
 
 @pytest.mark.parametrize("content,finish", [("", "stop"), ("  ", "stop"), ("partial", "length")])

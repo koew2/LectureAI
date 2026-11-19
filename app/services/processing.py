@@ -20,6 +20,7 @@ from app.models import (
     Transcription,
 )
 from app.services.ai import AIService, AITruncated, AIUnavailable
+from app.services.event_log import add_event
 from app.services.mail import notify_lecture_owner
 from app.services.transcription import InvalidAudio, Transcriber
 
@@ -78,6 +79,7 @@ async def process_lecture(
                     lecture_id=file_id, successful=True, finished_at=datetime.now(UTC)
                 )
             )
+            add_event(session, "lecture_completed", user_id=lecture.user_id, lecture_id=file_id)
             await session.commit()
         except Exception as exc:
             await session.rollback()
@@ -103,6 +105,13 @@ async def process_lecture(
                         error_message=failed.error_message,
                         finished_at=datetime.now(UTC),
                     )
+                )
+                add_event(
+                    session,
+                    "lecture_failed",
+                    user_id=failed.user_id,
+                    lecture_id=file_id,
+                    error=exc,
                 )
                 await session.commit()
                 await notify_lecture_owner(session, settings, failed)

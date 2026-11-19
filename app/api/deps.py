@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import Settings, get_settings
-from app.core.security import decode_token
+from app.core.security import decode_token, normalize_email
 from app.db import get_session
 from app.models import AudioFile, RefreshSession, Summary, User
 
@@ -33,7 +33,10 @@ def unauthorized() -> HTTPException:
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep, settings: SettingsDep
+    token: Annotated[str, Depends(oauth2_scheme)],
+    session: SessionDep,
+    settings: SettingsDep,
+    request: Request,
 ) -> User:
     try:
         claims = decode_token(token, "access", settings)
@@ -42,6 +45,7 @@ async def get_current_user(
     user = await session.get(User, claims.sub)
     if user is None or not user.is_active:
         raise unauthorized()
+    request.state.event_user_id = user.id
     return user
 
 
@@ -49,10 +53,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def is_admin(user: User, settings: Settings) -> bool:
-    return (
-        settings.admin_email is not None
-        and user.email.casefold() == settings.admin_email.casefold()
-    )
+    return settings.admin_email is not None and user.email == normalize_email(settings.admin_email)
 
 
 def require_admin(user: CurrentUser, settings: SettingsDep) -> None:
@@ -67,7 +68,7 @@ async def require_docs_admin(
     settings: SettingsDep,
 ) -> None:
     if access_token is not None:
-        require_admin(await get_current_user(access_token, session, settings), settings)
+        require_admin(await get_current_user(access_token, session, settings, request), settings)
         return
 
     try:
@@ -87,6 +88,7 @@ async def require_docs_admin(
     )
     if user is None:
         raise unauthorized()
+    request.state.event_user_id = user.id
     require_admin(user, settings)
 
 
