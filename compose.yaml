@@ -4,6 +4,13 @@ x-app-environment: &app-environment
   JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
   UPLOAD_DIR: /srv/eduflow/uploads
 
+x-mail-environment: &mail-environment
+  <<: *app-environment
+  SMTP_HOST: ${SMTP_HOST:-mailpit}
+  SMTP_PORT: ${SMTP_PORT:-1025}
+  SMTP_SECURITY: ${SMTP_SECURITY:-plain}
+  SMTP_FROM: ${SMTP_FROM:-eduflow@example.com}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -32,6 +39,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  mailpit:
+    image: axllent/mailpit:v1.27.4
+    ports:
+      - "127.0.0.1:8025:8025"
   migrate:
     build:
       context: .
@@ -47,12 +58,14 @@ services:
       context: .
       target: api
     env_file: .env
-    environment: *app-environment
+    environment: *mail-environment
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - audio_data:/srv/eduflow/uploads
     depends_on:
+      mailpit:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
       redis:
@@ -62,7 +75,7 @@ services:
       context: .
       target: worker
     env_file: .env
-    environment: *app-environment
+    environment: *mail-environment
     volumes:
       - audio_data:/srv/eduflow/uploads
       - whisper_cache:/home/eduflow/.cache

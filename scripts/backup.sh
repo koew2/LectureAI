@@ -25,20 +25,15 @@ if [[ "$EDUFLOW_BACKUP_STAGING" == / ]]; then
     printf 'The filesystem root cannot be the backup staging directory.\n' >&2
     exit 1
 fi
-mkdir -p -- "$EDUFLOW_BACKUP_STAGING"
-staging_dir="$(realpath -e -- "$EDUFLOW_BACKUP_STAGING")"
+staging_dir="$(realpath -m -- "$EDUFLOW_BACKUP_STAGING")"
 if [[ "$staging_dir" == / ]]; then
     printf 'The filesystem root cannot be the backup staging directory.\n' >&2
     exit 1
 fi
-if [[ "$staging_dir" == "$project_dir" || "$staging_dir" == "$project_dir/"* ]]; then
+if [[ "$staging_dir" == "$project_dir" || "$staging_dir" == "$project_dir/"* || "$project_dir" == "$staging_dir/"* ]]; then
     printf 'Keep backup staging outside the application checkout.\n' >&2
     exit 1
 fi
-chmod 700 -- "$staging_dir"
-exec 9>"$staging_dir/backup.lock"
-flock -n 9 || { printf 'A backup is already running.\n' >&2; exit 1; }
-
 compose=(docker compose --env-file "$project_dir/.env.production" -f "$project_dir/compose.production.yaml")
 # Derive the real audio path from Compose so a second DATA_DIR setting cannot drift.
 # The expanded config contains secrets; only the selected path is emitted.
@@ -55,6 +50,15 @@ if [[ "$audio_dir" == / || "$audio_dir" == "$project_dir" || "$audio_dir" == "$p
     printf 'Keep production audio in a separate data directory.\n' >&2
     exit 1
 fi
+if [[ "$staging_dir" == "$audio_dir" || "$staging_dir" == "$audio_dir/"* || "$audio_dir" == "$staging_dir/"* ]]; then
+    printf 'Keep backup staging outside the production audio directory.\n' >&2
+    exit 1
+fi
+
+mkdir -p -- "$staging_dir"
+chmod 700 -- "$staging_dir"
+exec 9>"$staging_dir/backup.lock"
+flock -n 9 || { printf 'A backup is already running.\n' >&2; exit 1; }
 
 work_dir="$staging_dir/current"
 mkdir -p -- "$work_dir"

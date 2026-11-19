@@ -50,7 +50,7 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> Mock:
 
 @pytest.fixture
 async def client(
-    factory: async_sessionmaker[AsyncSession], settings: Settings, queue: Mock
+    factory: async_sessionmaker[AsyncSession], settings: Settings, queue: Mock, mail: Mock
 ) -> AsyncIterator[AsyncClient]:
     async def session_override() -> AsyncIterator[AsyncSession]:
         async with factory() as session:
@@ -63,11 +63,27 @@ async def client(
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def mail(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    delivery = Mock()
+    monkeypatch.setattr("app.api.auth.send_registration_code", delivery)
+    monkeypatch.setattr("app.api.auth.randbelow", lambda limit: 123456)
+    return delivery
+
+
 async def register_and_login(
     client: AsyncClient, email: str = "student@example.com"
 ) -> dict[str, str]:
+    details = {
+        "email": email,
+        "username": "Тестовый пользователь",
+        "password": "StrongPassword123!",
+        "password_confirmation": "StrongPassword123!",
+    }
+    response = await client.post("/api/v1/auth/register", json=details)
+    assert response.status_code == 204, response.text
     response = await client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "StrongPassword123!"}
+        "/api/v1/auth/register/confirm", json={**details, "code": "123456"}
     )
     assert response.status_code == 201, response.text
     response = await client.post(

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LectureAI превращает аудиозаписи лекций в текст с таймкодами, конспекты и карточки для повторения.">
+  <title>LectureAI — из записи лекции в конспект</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body id="top">
+  <a class="skip-link" href="#main">К содержанию</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="LectureAI, на главную"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>LectureAI</a>
+      <nav aria-label="Основная навигация">
+        <a href="#features">Возможности</a>
+        <a href="#process">Как это работает</a>
+        <a href="#workspace">Мои лекции</a>
+      </nav>
+      <div class="header-actions">
+        <button id="open-admin" type="button" class="button outline small" hidden>Админ-панель <span aria-hidden="true">↗</span></button>
+        <button type="button" id="account" class="button primary small">Войти <span aria-hidden="true">↗</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">Аудио <span aria-hidden="true">→</span> Конспект</p>
+          <h1 id="hero-title">Запиши лекцию.<br>Повтори <em>главное.</em></h1>
+          <p class="lede">Загрузи аудиозапись. LectureAI расшифрует её, выделит главное и сделает карточки для повторения.</p>
+          <div class="hero-actions">
+            <a class="button primary hero-cta" id="start-lecture" href="#workspace">Загрузить лекцию <span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="#process">Как это работает <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+        <img class="hero-art" src="/assets/study-illustration.jpg" width="1448" height="1086" alt="" fetchpriority="high">
+      </div>
+      <dl class="wrap hero-facts">
+        <div><dt>Что загрузить</dt><dd>MP3, WAV или M4A</dd></div>
+        <div><dt>Что получишь</dt><dd>Текст, конспект и карточки</dd></div>
+        <div><dt>Где найти</dt><dd>В разделе «Мои лекции»</dd></div>
+      </dl>
+    </section>
+
+    <section class="section wrap" id="features" aria-labelledby="features-title">
+      <div class="section-heading">
+        <h2 id="features-title">Всё для работы с лекцией</h2>
+        <p>Возвращайся к нужному фрагменту и проверяй, что запомнил.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature">
+          <div class="feature-art" aria-hidden="true"><div class="waveform"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          <div class="feature-body"><h3>Расшифровка</h3><p>Текст записи с таймкодами, чтобы быстро найти нужный фрагмент.</p><a href="#workspace" data-result-view="transcript">Перейти к лекциям <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="feature">
+          <div class="feature-art" aria-hidden="true"><div class="art-paper"><i></i><i></i><i></i><i></i></div></div>
+          <div class="feature-body"><h3>Конспект и карточки</h3><p>Главные мысли лекции и вопросы, с которыми удобно повторить материал.</p><a href="#workspace" data-result-view="summary">Перейти к конспектам <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="feature">
+          <div class="feature-art" aria-hidden="true"><div class="art-bubble question">?</div><div class="art-bubble reply"><i></i><i></i></div></div>
+          <div class="feature-body"><h3>AI-тьютор</h3><p>Задай вопрос по записи и получи объяснение с опорой на текст лекции.</p><a href="#workspace" data-result-view="chat">Перейти к тьютору <span aria-hidden="true">↗</span></a></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section steps" id="process" aria-labelledby="process-title">
+      <div class="wrap">
+        <h2 id="process-title">Как это работает</h2>
+        <ol class="steps-grid">
+          <li><h3>Загрузи запись</h3><p>Выбери файл MP3, WAV или M4A.</p></li>
+          <li><h3>Дождись обработки</h3><p>Мы пришлём письмо, когда результат будет известен.</p></li>
+          <li><h3>Вернись к материалу</h3><p>Открой конспект, повтори карточки или задай вопрос.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section wrap workspace" id="workspace" aria-labelledby="workspace-title">
+      <h2 id="workspace-title">Мои лекции</h2>
+      <div id="guest-panel" class="panel guest"><p>Войди в аккаунт, чтобы загрузить запись или открыть сохранённые лекции.</p><button type="button" class="button primary" id="workspace-login">Войти или зарегистрироваться <span aria-hidden="true">↗</span></button></div>
+      <div id="study-panel" hidden>
+        <div class="workspace-grid">
+          <div class="panel">
+            <form id="upload-form">
+              <h3>Новая лекция</h3>
+              <div class="upload-area" id="drop-zone">
+                <label for="audio-file">Выбери аудиофайл</label>
+                <input id="audio-file" type="file" name="file" accept=".mp3,.wav,.m4a" required>
+                <small id="audio-hint">MP3, WAV или M4A. Можно перетащить файл сюда.</small>
+              </div>
+              <button class="button primary" type="submit">Начать обработку <span aria-hidden="true">→</span></button>
+              <p id="upload-notice" class="notice" role="status" hidden></p>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-heading"><h3>Библиотека</h3><button type="button" id="reload-list" class="button outline small">Обновить</button></div>
+            <p id="library-notice" class="notice" role="status" hidden></p>
+            <ul id="lecture-list" class="lecture-list"></ul>
+            <button type="button" id="more-lectures" class="button outline small" hidden>Показать ещё</button>
+          </div>
+        </div>
+        <section class="panel result" id="lecture-result" aria-labelledby="lecture-title" hidden>
+          <div class="panel-heading"><h3 id="lecture-title" tabindex="-1"></h3><button type="button" class="button outline small" id="refresh-lecture">Обновить статус</button></div>
+          <p id="lecture-notice" class="notice" role="status"></p>
+          <div id="lecture-content" hidden>
+            <div class="result-tabs" role="tablist" aria-label="Материалы лекции">
+              <button type="button" role="tab" id="tab-summary" aria-selected="true" aria-controls="view-summary" data-tab="summary">Конспект</button>
+              <button type="button" role="tab" id="tab-transcript" aria-selected="false" aria-controls="view-transcript" data-tab="transcript" tabindex="-1">Расшифровка</button>
+              <button type="button" role="tab" id="tab-cards" aria-selected="false" aria-controls="view-cards" data-tab="cards" tabindex="-1">Карточки</button>
+              <button type="button" role="tab" id="tab-chat" aria-selected="false" aria-controls="view-chat" data-tab="chat" tabindex="-1">AI-тьютор</button>
+            </div>
+            <div id="view-summary" role="tabpanel" aria-labelledby="tab-summary"><article id="summary-content" class="prose"></article><h4>Ключевые мысли</h4><ul id="key-points"></ul></div>
+            <div id="view-transcript" role="tabpanel" aria-labelledby="tab-transcript" hidden><button type="button" class="button outline small" id="download-transcript">Скачать текст</button><div id="transcript-content" class="transcript"></div></div>
+            <div id="view-cards" role="tabpanel" aria-labelledby="tab-cards" hidden>
+              <div class="flashcard"><p id="card-count" class="muted"></p><h4 id="card-question"></h4><button type="button" class="button outline small" id="reveal-card" aria-controls="card-answer" aria-expanded="false">Показать ответ</button><p id="card-answer" hidden></p></div>
+              <div class="card-controls"><button type="button" class="button outline small" id="previous-card">← Назад</button><button type="button" class="button outline small" id="next-card">Далее →</button></div>
+            </div>
+            <div id="view-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+              <div id="chat-log" role="log" aria-label="Диалог с тьютором"></div>
+              <form id="chat-form"><label for="question">Вопрос по лекции</label><textarea id="question" rows="3" maxlength="4000" required placeholder="Например, объясни основную идею лекции"></textarea><button class="button primary" id="chat-submit" type="submit">Отправить вопрос <span aria-hidden="true">→</span></button></form>
+              <p id="chat-notice" class="notice" role="status" hidden></p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="#top" aria-label="LectureAI, наверх"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>LectureAI</a>
+        </div>
+        <div class="footer-links" id="api-docs-footer" hidden>
+          <a href="/docs" target="_blank" rel="noopener">Документация API <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="footer-links">
+          <h2>Мы в соцсетях</h2>
+          <div class="footer-socials">
+            <a class="button outline small" href="https://t.me/koew2" target="_blank" rel="noopener">Telegram <span aria-hidden="true">↗</span></a>
+            <a class="button outline small" href="https://vk.ru/koew6" target="_blank" rel="noopener">ВКонтакте <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom"><span>CDA</span><a href="#top">Наверх ↑</a></div>
+    </div>
+  </footer>
+
+  <dialog id="auth-dialog" aria-labelledby="auth-title">
+    <div class="dialog-inner">
+      <button type="button" class="close" id="close-auth" aria-label="Закрыть">×</button>
+      <h2 id="auth-title">Войти</h2>
+      <form id="auth-form" method="post">
+        <div id="username-field" hidden>
+          <label for="username">Имя пользователя</label>
+          <input id="username" name="username" autocomplete="nickname" maxlength="80" disabled required>
+        </div>
+        <label for="email">Электронная почта</label><input id="email" type="email" name="email" autocomplete="email" maxlength="320" required>
+        <label for="password">Пароль</label>
+        <div class="password-input"><input id="password" type="password" name="password" autocomplete="current-password" maxlength="128" required aria-describedby="password-hint"><button type="button" data-password="password" class="button outline small" aria-controls="password">Показать<span class="sr-only"> пароль</span></button></div>
+        <small id="password-hint" hidden>Минимум 10 символов.</small>
+        <div id="confirmation-field" hidden>
+          <label for="password-confirmation">Подтверждение пароля</label>
+          <div class="password-input"><input id="password-confirmation" type="password" autocomplete="new-password" minlength="10" maxlength="128" disabled required><button type="button" data-password="password-confirmation" class="button outline small" aria-controls="password-confirmation">Показать<span class="sr-only"> подтверждение пароля</span></button></div>
+        </div>
+        <p id="auth-notice" class="notice" role="status" hidden></p>
+        <button class="button primary" id="auth-submit" type="submit">Войти</button>
+      </form>
+      <form id="verify-form" hidden>
+        <p id="code-destination"></p>
+        <label for="email-code">Код из письма</label>
+        <input id="email-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        <p id="verify-notice" class="notice" role="status" hidden></p>
+        <button class="button primary" type="submit">Подтвердить почту</button>
+        <button type="button" class="text-link" id="resend-code">Отправить код ещё раз</button>
+      </form>
+      <button type="button" class="text-link" id="switch-auth">Создать аккаунт</button>
+    </div>
+  </dialog>
+  <noscript>Включи JavaScript, чтобы загружать лекции и просматривать результаты.</noscript>
+</body>
+</html>

@@ -1,6 +1,7 @@
-"""Async OpenAI/DeepSeek adapter with validated JSON and bounded context."""
+"""Async chat completions with validated JSON and bounded lecture context."""
 
 import json
+import logging
 import re
 
 from openai import AsyncOpenAI, OpenAIError
@@ -11,9 +12,19 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.schemas import StudyNotes
 
+logger = logging.getLogger(__name__)
+
 
 class AIUnavailable(Exception):
     """Provider failure, missing configuration or an invalid/truncated model result."""
+
+
+class AITruncated(AIUnavailable):
+    """The provider reached its output token limit."""
+
+
+class AIInvalidNotes(AIUnavailable):
+    """The returned study notes did not match the expected schema."""
 
 
 def split_text(text: str, chunk_chars: int) -> list[str]:
@@ -43,6 +54,8 @@ class AIService:
         providers = {
             "openai": ("https://api.openai.com/v1", self.settings.openai_api_key),
             "deepseek": ("https://api.deepseek.com", self.settings.deepseek_api_key),
+            "orcarouter": ("https://api.orcarouter.ai/v1", self.settings.orca_key),
+            "openrouter": ("https://openrouter.ai/api/v1", self.settings.openrouter_api_key),
         }
         base_url, key = providers[self.settings.ai_provider]
         if not key.get_secret_value() or not self.settings.ai_model.strip():
@@ -60,6 +73,19 @@ class AIService:
             {"role": "user", "content": content},
         ]
         response_format: ResponseFormat = {"type": "json_object"} if json_mode else {"type": "text"}
+        extra_body = None
+        if self.settings.ai_provider == "openrouter":
+            extra_body = {"reasoning": {"enabled": False}}
+            if json_mode:
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "lecture_study_notes",
+                        "schema": StudyNotes.model_json_schema(),
+                        "strict": True,
+                    },
+                }
+                extra_body["provider"] = {"require_parameters": True}
         try:
             async with self._client() as client:
                 if self.settings.ai_provider == "openai":
@@ -75,17 +101,45 @@ class AIService:
                         messages=messages,
                         response_format=response_format,
                         max_tokens=self.settings.ai_max_output_tokens,
+                        extra_body=extra_body,
                     )
-        except OpenAIError as exc:
-            raise AIUnavailable("AI request failed") from exc
-        if not result.choices:
+        except (OpenAIError, json.JSONDecodeError):
+            raise AIUnavailable("AI request failed") from None
+        if getattr(result, "error", None):
+            raise AIUnavailable("AI provider reported an error")
+        choices = getattr(result, "choices", None)
+        if not isinstance(choices, list) or not choices:
             raise AIUnavailable("AI returned no choices")
-        choice = result.choices[0]
-        if choice.finish_reason != "stop" or choice.message.refusal:
-            raise AIUnavailable("AI output was truncated or refused")
-        if not choice.message.content or not choice.message.content.strip():
+        choice = choices[0]
+        message = getattr(choice, "message", None)
+        finish_reason = getattr(choice, "finish_reason", None)
+        if getattr(message, "refusal", None) or finish_reason == "content_filter":
+            raise AIUnavailable("AI refused to answer")
+        if finish_reason == "length":
+            raise AITruncated("AI response reached its output limit")
+        if finish_reason != "stop":
+            raise AIUnavailable("AI response ended without a final answer")
+        answer = getattr(message, "content", None)
+        if not isinstance(answer, str) or not answer.strip():
             raise AIUnavailable("AI returned empty content")
-        return choice.message.content.strip()
+        return answer.strip()
+
+    async def _validated_notes(self, instruction: str, content: str) -> StudyNotes:
+        raw = await self._completion(instruction, content, json_mode=True)
+        try:
+            return StudyNotes.model_validate_json(raw)
+        except ValidationError:
+            raise AIInvalidNotes("AI returned an invalid study note schema") from None
+
+    async def _notes_completion(self, instruction: str, content: str) -> StudyNotes:
+        try:
+            return await self._validated_notes(instruction, content)
+        except (AITruncated, AIInvalidNotes) as exc:
+            logger.warning("Retrying study notes with a shorter format (%s)", type(exc).__name__)
+            return await self._validated_notes(
+                instruction + " Keep the whole JSON under 500 words and use at most 4 flashcards.",
+                content,
+            )
 
     async def generate_notes(self, text: str) -> StudyNotes:
         chunks = split_text(text, self.settings.ai_chunk_chars)
@@ -98,15 +152,12 @@ class AIService:
             '{"structured_markdown":"# Topic\\n## Concepts\\n...",'
             '"key_points_json":["Key fact"],'
             '"flashcards":[{"question":"Question?","answer":"Answer"}]}. '
-            "Include concise definitions, explanations and at least one flashcard."
+            "Include concise definitions and explanations. Aim for at most 800 words total, "
+            "3–8 key points and 1–8 short flashcards."
         )
         notes: list[StudyNotes] = []
         for chunk in chunks:
-            raw = await self._completion(instruction, chunk, json_mode=True)
-            try:
-                notes.append(StudyNotes.model_validate_json(raw))
-            except ValidationError as exc:
-                raise AIUnavailable("AI returned an invalid study note schema") from exc
+            notes.append(await self._notes_completion(instruction, chunk))
 
         # Merge in small groups. Each source chunk contributes before reduction;
         # a long lecture is never implemented as text[:context_limit].
@@ -120,15 +171,11 @@ class AIService:
                 payload = json.dumps([n.model_dump() for n in group], ensure_ascii=False)
                 if len(payload) > self.settings.ai_chunk_chars * 12:
                     raise AIUnavailable("Intermediate notes exceed the AI context budget")
-                raw = await self._completion(
+                merged = await self._notes_completion(
                     instruction + " Merge these notes into a coherent concise study guide.",
                     payload,
-                    json_mode=True,
                 )
-                try:
-                    reduced.append(StudyNotes.model_validate_json(raw))
-                except ValidationError as exc:
-                    raise AIUnavailable("AI returned invalid merged notes") from exc
+                reduced.append(merged)
             notes = reduced
         return notes[0]
 

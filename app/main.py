@@ -2,16 +2,18 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import auth, lectures
+from app.api import admin, auth, docs, lectures
 from app.core.config import get_settings
 from app.db import create_session_factory
 from app.services.rate_limit import RateLimiter, RedisCounterStore
@@ -47,9 +49,26 @@ app = FastAPI(
     version="0.1.0",
     description="Audio lectures → transcription, structured notes, flashcards and AI tutor.",
     lifespan=lifespan,
+    openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
 )
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(lectures.router, prefix="/api/v1")
+app.include_router(docs.router)
+web_dir = Path(__file__).with_name("web")
+app.mount("/assets", StaticFiles(directory=web_dir / "assets"), name="assets")
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> FileResponse:
+    return FileResponse(web_dir / "index.html")
+
+
+@app.get("/admin", include_in_schema=False)
+async def admin_page() -> FileResponse:
+    return FileResponse(web_dir / "admin.html")
 
 
 @app.exception_handler(RequestValidationError)
@@ -71,6 +90,6 @@ async def ready(request: Request) -> dict[str, str]:
     try:
         async with request.app.state.session_factory() as session:
             await session.execute(text("SELECT 1"))
-    except SQLAlchemyError:
+    except (SQLAlchemyError, OSError):
         raise HTTPException(status_code=503, detail="Database is unavailable") from None
     return {"status": "ready"}

@@ -14,6 +14,13 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+x-audio-mount: &audio-mount
+  type: bind
+  source: ${DATA_DIR:-/srv/eduflow-data}/audio
+  target: /srv/eduflow/uploads
+  bind:
+    create_host_path: false
+
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -92,7 +99,7 @@ services:
       - --proxy-headers
       - --forwarded-allow-ips=172.30.80.2
     volumes:
-      - ${DATA_DIR:-/srv/eduflow-data}/audio:/srv/eduflow/uploads
+      - *audio-mount
     networks: [backend, proxy]
     healthcheck:
       test:
@@ -120,7 +127,7 @@ services:
     # Allow an active transcription to finish during a planned stop/update.
     stop_grace_period: 2h
     volumes:
-      - ${DATA_DIR:-/srv/eduflow-data}/audio:/srv/eduflow/uploads
+      - *audio-mount
       - whisper_cache:/home/eduflow/.cache
     networks: [backend]
     depends_on:

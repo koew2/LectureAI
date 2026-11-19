@@ -1,10 +1,12 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
+from openai import AsyncOpenAI
 
 from app.core.config import Settings
-from app.services.ai import AIService, AIUnavailable, relevant_context, split_text
+from app.services.ai import AIService, AITruncated, AIUnavailable, relevant_context, split_text
 from tests.test_processing import study_notes
 
 
@@ -19,6 +21,20 @@ async def test_notes_process_every_chunk_and_merge(
     await service.generate_notes(text)
     assert completion.await_count == 4  # Three source chunks plus the final merge.
     assert [c.args[1] for c in completion.await_args_list[:3]] == ["A" * 1000, "B" * 1000, "TAIL"]
+
+
+@pytest.mark.parametrize("first_response", [AITruncated(), '{"flashcards":[]}'])
+async def test_incomplete_notes_retry_with_shorter_format(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, first_response: AITruncated | str
+) -> None:
+    service = AIService(settings)
+    notes = study_notes()
+    completion = AsyncMock(side_effect=[first_response, notes.model_dump_json()])
+    monkeypatch.setattr(service, "_completion", completion)
+    assert await service.generate_notes("Lecture") == notes
+    first, second = (call.args for call in completion.await_args_list)
+    assert first[1] == second[1] == "Lecture"
+    assert "under 500 words" in second[0]
 
 
 @pytest.mark.parametrize("output", ["not json", "{}", '{"structured_markdown":"only text"}'])
@@ -37,7 +53,7 @@ async def test_limits_fail_explicitly(settings: Settings) -> None:
         await AIService(settings).generate_notes("x" * (settings.ai_chunk_chars + 1))
 
 
-@pytest.mark.parametrize("provider", ["openai", "deepseek"])
+@pytest.mark.parametrize("provider", ["openai", "deepseek", "orcarouter", "openrouter"])
 async def test_sdk_payload_and_client_closure(
     settings: Settings, monkeypatch: pytest.MonkeyPatch, provider: str
 ) -> None:
@@ -62,6 +78,8 @@ async def test_sdk_payload_and_client_closure(
     assert payload["response_format"] == {"type": "text"}
     token_arg = "max_completion_tokens" if provider == "openai" else "max_tokens"
     assert payload[token_arg] == settings.ai_max_output_tokens
+    if provider == "openrouter":
+        assert payload["extra_body"] == {"reasoning": {"enabled": False}}
     manager.__aexit__.assert_awaited_once()
 
 
@@ -87,6 +105,29 @@ async def test_empty_and_truncated_results_fail(
         await service.answer_question("Lecture", "Question?")
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"error": {"code": 502, "message": "private provider detail"}}),
+        httpx.Response(200, json={"choices": [None]}),
+        httpx.Response(200, text="private provider detail"),
+        httpx.Response(200, text="{", headers={"Content-Type": "application/json"}),
+    ],
+)
+async def test_provider_errors_in_success_responses_are_handled(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, response: httpx.Response
+) -> None:
+    service = AIService(settings)
+    client = AsyncOpenAI(
+        api_key="test-key",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response)),
+    )
+    monkeypatch.setattr(service, "_client", lambda: client)
+    with pytest.raises(AIUnavailable) as exc:
+        await service.answer_question("Lecture", "Question?")
+    assert "private provider detail" not in str(exc.value)
+
+
 def test_retrieval_searches_the_end_of_a_long_lecture() -> None:
     text = "a" * 6000 * 7 + "Photosynthesis converts light energy."
     context = relevant_context(text, "Explain photosynthesis")
@@ -99,3 +140,23 @@ def test_missing_ai_configuration_fails(settings: Settings) -> None:
     settings.ai_model = ""
     with pytest.raises(AIUnavailable):
         AIService(settings)._client()
+
+
+@pytest.mark.parametrize(
+    ("provider", "key_name", "base_url"),
+    [
+        ("orcarouter", "ORCA_KEY", "https://api.orcarouter.ai/v1/"),
+        ("openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/"),
+    ],
+)
+async def test_router_reads_its_key_from_environment(
+    monkeypatch: pytest.MonkeyPatch, provider: str, key_name: str, base_url: str
+) -> None:
+    monkeypatch.setenv("AI_PROVIDER", provider)
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    monkeypatch.setenv(key_name, "test-router-key")
+    settings = Settings(_env_file=None)
+
+    async with AIService(settings)._client() as client:
+        assert str(client.base_url) == base_url
+        assert client.api_key == "test-router-key"

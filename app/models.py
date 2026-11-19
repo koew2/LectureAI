@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Integer,
     MetaData,
     String,
     Text,
@@ -49,6 +50,7 @@ class User(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True)
+    username: Mapped[str | None] = mapped_column(String(80))
     hashed_password: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -65,6 +67,17 @@ class RefreshSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class RegistrationCode(Base):
+    """A time-limited email challenge, consumed when the account is created."""
+
+    __tablename__ = "registration_codes"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts_left: Mapped[int] = mapped_column(Integer)
+
+
 class AudioFile(Base):
     __tablename__ = "audio_files"
     __table_args__ = (CheckConstraint("duration >= 0", name="nonnegative_duration"),)
@@ -72,6 +85,7 @@ class AudioFile(Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     file_path: Mapped[str] = mapped_column(Text)
+    filename: Mapped[str | None] = mapped_column(String(255))
     duration: Mapped[float | None] = mapped_column(Float)
     status: Mapped[LectureStatus] = mapped_column(
         Enum(LectureStatus, native_enum=False, create_constraint=True, name="lecture_status"),
@@ -87,6 +101,20 @@ class AudioFile(Base):
     summary: Mapped["Summary | None"] = relationship(
         back_populates="audio_file", cascade="all, delete-orphan", lazy="raise", uselist=False
     )
+
+
+class LectureProcessingResult(Base):
+    """The outcome of one processing attempt, retained across retries."""
+
+    __tablename__ = "lecture_processing_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lecture_id: Mapped[UUID] = mapped_column(
+        ForeignKey("audio_files.id", ondelete="CASCADE"), index=True
+    )
+    successful: Mapped[bool]
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
 
 
 class Transcription(Base):

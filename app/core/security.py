@@ -1,4 +1,4 @@
-"""Argon2 password hashing and JWTs with separate access/refresh token types."""
+"""Argon2 password hashing and signed tokens for API and documentation sessions."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from app.core.config import Settings
 
+TokenType = Literal["access", "refresh", "docs"]
+
 password_hash = PasswordHash.recommended()
 # A fixed-cost verification also runs when the email does not exist.
 DUMMY_PASSWORD_HASH = password_hash.hash("not-a-user-password")
@@ -18,13 +20,13 @@ DUMMY_PASSWORD_HASH = password_hash.hash("not-a-user-password")
 class TokenClaims(BaseModel):
     sub: UUID
     jti: UUID
-    type: Literal["access", "refresh"]
+    type: TokenType
     exp: int
 
 
 def create_token(
     user_id: UUID,
-    token_type: Literal["access", "refresh"],
+    token_type: TokenType,
     settings: Settings,
     *,
     jti: UUID | None = None,
@@ -54,9 +56,7 @@ def create_token(
     return token, expires_at, token_id
 
 
-def decode_token(
-    token: str, expected_type: Literal["access", "refresh"], settings: Settings
-) -> TokenClaims:
+def decode_token(token: str, expected_type: TokenType, settings: Settings) -> TokenClaims:
     payload = jwt.decode(
         token,
         settings.jwt_secret.get_secret_value(),

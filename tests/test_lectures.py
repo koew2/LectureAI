@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.models import AudioFile, LectureStatus, Transcription
+from app.models import AudioFile, LectureProcessingResult, LectureStatus, Transcription
 from app.services.ai import AIUnavailable
 from tests.conftest import register_and_login
 
@@ -28,10 +28,19 @@ async def test_upload_status_and_ownership(
     result = await client.get(f"/api/v1/lectures/{lecture_id}", headers=auth_headers)
     assert result.status_code == 200
     assert result.json()["status"] == "pending"
+    assert result.json()["filename"] == "lecture.mp3"
     assert result.json()["transcription"] is None
     assert "file_path" not in result.json()
     other = await register_and_login(client, "other@example.com")
     other_headers = {"Authorization": f"Bearer {other['access_token']}"}
+    library = await client.get("/api/v1/lectures?limit=1", headers=auth_headers)
+    assert library.status_code == 200
+    items = library.json()
+    assert [(item["id"], item["filename"]) for item in items] == [(lecture_id, "lecture.mp3")]
+    assert "file_path" not in items[0]
+    assert (await client.get("/api/v1/lectures", headers=other_headers)).json() == []
+    assert (await client.get("/api/v1/lectures?offset=1", headers=auth_headers)).json() == []
+    assert (await client.get("/api/v1/lectures")).status_code == 401
     assert (
         await client.get(f"/api/v1/lectures/{lecture_id}", headers=other_headers)
     ).status_code == 404
@@ -85,6 +94,42 @@ async def test_queue_failure_records_failed_status(
     async with factory() as session:
         lecture = await session.scalar(select(AudioFile))
         assert lecture is not None and lecture.status == LectureStatus.failed
+
+
+async def test_lost_queue_response_does_not_overwrite_worker_result(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def worker_finished_before_publish_error(_enqueue: Mock, file_id: UUID) -> None:
+        async with factory() as session:
+            lecture = await session.get(AudioFile, file_id)
+            assert lecture is not None
+            lecture.status = LectureStatus.completed
+            session.add(LectureProcessingResult(lecture_id=file_id, successful=True))
+            await session.commit()
+        raise ConnectionError("Broker response lost")
+
+    monkeypatch.setattr("app.api.lectures.run_in_threadpool", worker_finished_before_publish_error)
+    notify = AsyncMock()
+    monkeypatch.setattr("app.api.lectures.notify_lecture_owner", notify)
+    response = await client.post(
+        "/api/v1/lectures/upload", headers=auth_headers, files={"file": ("a.wav", b"x")}
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "completed"
+    notify.assert_not_awaited()
+    async with factory() as session:
+        results = (await session.scalars(select(LectureProcessingResult))).all()
+        assert len(results) == 1 and results[0].successful
+
+
+async def test_lecture_list_validates_offset(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    response = await client.get("/api/v1/lectures?offset=2147483648", headers=auth_headers)
+    assert response.status_code == 422
 
 
 async def test_chat_requires_completed_lecture(
@@ -148,9 +193,15 @@ async def test_missing_lecture_and_invalid_id(
     ).status_code == 422
 
 
-async def test_swagger_documents_security_and_endpoints(client: AsyncClient) -> None:
-    schema = (await client.get("/openapi.json")).json()
-    assert "/api/v1/auth/refresh" in schema["paths"]
-    assert "/api/v1/lectures/{file_id}/chat" in schema["paths"]
-    assert schema["components"]["securitySchemes"]["OAuth2PasswordBearer"]["type"] == "oauth2"
-    assert (await client.get("/docs")).status_code == 200
+async def test_frontend_serves_the_app_and_assets(client: AsyncClient) -> None:
+    page = await client.get("/")
+    assert page.status_code == 200 and 'lang="ru"' in page.text
+    for asset in (
+        "styles.css",
+        "app.js",
+        "study-illustration.jpg",
+        "inter-cyrillic.woff2",
+        "inter-latin.woff2",
+    ):
+        response = await client.get(f"/assets/{asset}")
+        assert response.status_code == 200 and response.content

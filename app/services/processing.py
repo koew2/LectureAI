@@ -3,14 +3,24 @@
 import asyncio
 import logging
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import AudioFile, Flashcard, LectureStatus, Summary, Transcription
-from app.services.ai import AIService, AIUnavailable
+from app.core.config import Settings
+from app.models import (
+    AudioFile,
+    Flashcard,
+    LectureProcessingResult,
+    LectureStatus,
+    Summary,
+    Transcription,
+)
+from app.services.ai import AIService, AITruncated, AIUnavailable
+from app.services.mail import notify_lecture_owner
 from app.services.transcription import InvalidAudio, Transcriber
 
 logger = logging.getLogger(__name__)
@@ -21,6 +31,7 @@ async def process_lecture(
     factory: async_sessionmaker[AsyncSession],
     transcriber: Transcriber,
     ai: AIService,
+    settings: Settings,
 ) -> None:
     """Process one lecture; caller must hold the per-lecture advisory lock."""
     async with factory() as session:
@@ -62,6 +73,11 @@ async def process_lecture(
             session.add(summary)
             lecture.duration = transcript.duration
             lecture.status = LectureStatus.completed
+            session.add(
+                LectureProcessingResult(
+                    lecture_id=file_id, successful=True, finished_at=datetime.now(UTC)
+                )
+            )
             await session.commit()
         except Exception as exc:
             await session.rollback()
@@ -70,6 +86,8 @@ async def process_lecture(
                 failed.status = LectureStatus.failed
                 if isinstance(exc, InvalidAudio):
                     failed.error_message = str(exc)
+                elif isinstance(exc, AITruncated):
+                    failed.error_message = "AI output limit reached while generating study notes."
                 elif isinstance(exc, AIUnavailable):
                     failed.error_message = (
                         "AI processing failed. Check provider configuration or limits."
@@ -78,7 +96,17 @@ async def process_lecture(
                     failed.error_message = (
                         "Lecture processing failed. Contact the project maintainer."
                     )
+                session.add(
+                    LectureProcessingResult(
+                        lecture_id=file_id,
+                        successful=False,
+                        error_message=failed.error_message,
+                        finished_at=datetime.now(UTC),
+                    )
+                )
                 await session.commit()
+                await notify_lecture_owner(session, settings, failed)
             # Avoid logging provider payloads, lecture text, credentials or filesystem paths.
             logger.error("Lecture %s failed (%s)", file_id, type(exc).__name__)
             raise
+        await notify_lecture_owner(session, settings, lecture)

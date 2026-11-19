@@ -10,6 +10,8 @@ from typing import Any, Protocol
 
 from app.core.config import Settings
 
+AUDIO_FORMATS = {".mp3": {"mp3"}, ".wav": {"wav"}, ".m4a": {"mov", "mp4", "m4a"}}
+
 
 class InvalidAudio(Exception):
     """An unsupported, empty, damaged or excessively long media file."""
@@ -45,6 +47,10 @@ class FasterWhisperTranscriber:
                     "ffprobe",
                     "-v",
                     "error",
+                    "-format_whitelist",
+                    "mp3,wav,mov",
+                    "-protocol_whitelist",
+                    "file",
                     "-show_entries",
                     "format=duration,format_name:stream=codec_type",
                     "-of",
@@ -59,9 +65,8 @@ class FasterWhisperTranscriber:
             data = json.loads(result.stdout)
             duration = float(data["format"]["duration"])
             formats = set(data["format"]["format_name"].split(","))
-            expected = {".mp3": {"mp3"}, ".wav": {"wav"}, ".m4a": {"mov", "mp4", "m4a"}}
             has_audio = any(s.get("codec_type") == "audio" for s in data["streams"])
-            if not has_audio or not formats.intersection(expected.get(path.suffix, set())):
+            if not has_audio or not formats.intersection(AUDIO_FORMATS.get(path.suffix, set())):
                 raise InvalidAudio("File contents do not match a supported audio format")
         except (subprocess.SubprocessError, KeyError, ValueError, TypeError) as exc:
             raise InvalidAudio("Unable to decode the audio file") from exc

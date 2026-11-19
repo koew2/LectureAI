@@ -30,6 +30,10 @@ celery_app.conf.update(
 )
 
 
+class LectureTaskFailed(RuntimeError):
+    """Celery may log this exception without exposing audio paths or provider payloads."""
+
+
 @celery_app.on_after_configure.connect  # type: ignore[untyped-decorator]
 def configure_broker(sender: Celery, **kwargs: object) -> None:
     sender.conf.broker_url = get_settings().redis_url
@@ -57,7 +61,11 @@ async def run_lecture(file_id: UUID) -> None:
                 return
             try:
                 await process_lecture(
-                    file_id, factory, FasterWhisperTranscriber(settings), AIService(settings)
+                    file_id,
+                    factory,
+                    FasterWhisperTranscriber(settings),
+                    AIService(settings),
+                    settings,
                 )
             finally:
                 await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": lock_id})
@@ -69,4 +77,7 @@ async def run_lecture(file_id: UUID) -> None:
 @celery_app.task(name="eduflow.process_lecture")  # type: ignore[untyped-decorator]
 def process_lecture_task(file_id: str) -> None:
     """Worker jobs can be re-delivered safely; completed lectures are skipped."""
-    asyncio.run(run_lecture(UUID(file_id)))
+    try:
+        asyncio.run(run_lecture(UUID(file_id)))
+    except Exception as exc:
+        raise LectureTaskFailed(f"Lecture processing failed ({type(exc).__name__})") from None

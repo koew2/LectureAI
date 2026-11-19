@@ -1,7 +1,12 @@
 """Create an ignored .env with random local secrets; never overwrite an existing one."""
 
+import os
 import secrets
 from pathlib import Path
+
+
+def open_private_file(path: str, flags: int) -> int:
+    return os.open(path, flags, 0o600)
 
 
 def main() -> None:
@@ -13,7 +18,7 @@ def main() -> None:
     content = content.replace("POSTGRES_PASSWORD=\n", f"POSTGRES_PASSWORD={password}\n")
     content = content.replace("YOUR_URL_ENCODED_PASSWORD", password)
     try:
-        with destination.open("x", encoding="utf-8") as output:
+        with open(destination, "x", encoding="utf-8", opener=open_private_file) as output:
             output.write(content)
     except FileExistsError:
         raise SystemExit(".env already exists; it was not overwritten") from None
