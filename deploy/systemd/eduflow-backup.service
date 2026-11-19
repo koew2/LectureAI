@@ -1,0 +1,15 @@
+[Unit]
+Description=Encrypted EduFlow database, audio and application backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+EnvironmentFile=/etc/eduflow/backup.env
+ExecStart=/usr/bin/bash /srv/eduflow/app/scripts/backup.sh
+# A cold first backup may take longer than the usual systemd service timeout.
+TimeoutStartSec=infinity
+Nice=10

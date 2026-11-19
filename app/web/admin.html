@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Админ-панель · LectureAI</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script type="module" src="/assets/admin.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="/" target="_blank" rel="noopener"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>LectureAI</a>
+      <a class="button outline small" id="api-docs" href="/docs" target="_blank" rel="noopener" hidden>Документация API ↗</a>
+    </div>
+  </header>
+  <main class="wrap admin-main">
+    <p class="eyebrow">Админ-панель</p>
+    <h1 id="admin-view-title">Обработка лекций</h1>
+    <p id="admin-notice" class="notice" role="status">Войди в LectureAI и открой админ-панель с главной страницы.</p>
+    <div id="admin-workspace" hidden>
+      <div class="result-tabs" role="tablist" aria-label="Разделы админ-панели">
+        <button type="button" role="tab" id="admin-tab-processing" data-admin-view="processing" aria-selected="true" aria-controls="processing-panel">Обработка лекций</button>
+        <button type="button" role="tab" id="admin-tab-events" data-admin-view="events" aria-selected="false" aria-controls="events-panel" tabindex="-1">Логи</button>
+      </div>
+      <section class="panel" id="processing-panel" role="tabpanel" aria-labelledby="admin-tab-processing" hidden>
+        <div class="admin-controls">
+          <div>
+            <label for="result-filter">Результат</label>
+            <select id="result-filter">
+              <option value="all">Все обработки</option>
+              <option value="completed">Успешные</option>
+              <option value="failed">Неуспешные</option>
+            </select>
+          </div>
+          <button type="button" class="button outline small" id="refresh-history">Обновить</button>
+        </div>
+        <p class="muted admin-counts" id="processing-counts"></p>
+        <div class="admin-table" tabindex="0" role="region" aria-label="Таблица результатов">
+          <table>
+            <thead><tr><th scope="col">Лекция</th><th scope="col">Пользователь</th><th scope="col">Результат</th><th scope="col">Время</th><th scope="col">Причина ошибки</th></tr></thead>
+            <tbody id="processing-rows"></tbody>
+          </table>
+        </div>
+        <button type="button" class="button outline small" id="more-processing" hidden>Показать ещё</button>
+      </section>
+      <section class="panel" id="events-panel" role="tabpanel" aria-labelledby="admin-tab-events" hidden>
+        <div class="admin-controls">
+          <div>
+            <label for="event-level">Уровень</label>
+            <select id="event-level">
+              <option value="all">Все события</option>
+              <option value="info">Информация</option>
+              <option value="error">Ошибки</option>
+            </select>
+          </div>
+          <button type="button" class="button outline small" id="refresh-events">Обновить</button>
+        </div>
+        <div class="admin-table admin-events" tabindex="0" role="region" aria-label="Журнал событий">
+          <table>
+            <thead><tr><th scope="col">Время</th><th scope="col">Пользователь</th><th scope="col">Уровень</th><th scope="col">Событие</th><th scope="col">Лекция</th><th scope="col">Класс ошибки</th></tr></thead>
+            <tbody id="events-rows"></tbody>
+          </table>
+        </div>
+        <button type="button" class="button outline small" id="more-events" hidden>Показать ещё</button>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
